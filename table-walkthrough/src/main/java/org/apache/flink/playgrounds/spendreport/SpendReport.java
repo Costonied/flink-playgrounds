@@ -26,13 +26,44 @@ import org.apache.flink.table.expressions.TimeIntervalUnit;
 
 import static org.apache.flink.table.api.Expressions.*;
 
+/**
+ * Главный класс нашей Job (таски/приложения)
+ * Отличия от ванильной версии:
+ * - добавлены оба примера функции подготовки отчета reportByFloor и reportByWindow
+ * - добавлены поясняющие комментарии
+ */
 public class SpendReport {
 
-    public static Table report(Table transactions) {
-        throw new UnimplementedException();
+    /**
+     * Округление через Floor работает не так эффективно как обработка с использованием оконных функций,
+     * особенно если работаем через потоковый режим (streaming)
+     * @param transactions
+     * @return
+     */
+    public static Table reportByFloor(Table transactions) {
+        return transactions.select(
+                $("account_id"),
+                $("transaction_time").floor(TimeIntervalUnit.HOUR).as("log_ts"),
+                $("amount"))
+            .groupBy($("account_id"), $("log_ts"))
+            .select(
+                $("account_id"),
+                $("log_ts"),
+                $("amount").sum().as("amount"));
+    }
+
+    public static Table reportByWindow(Table transactions) {
+        return transactions
+            .window(Tumble.over(lit(1).hour()).on($("transaction_time")).as("log_ts"))
+            .groupBy($("account_id"), $("log_ts"))
+            .select(
+                $("account_id"),
+                $("log_ts").start().as("log_ts"),
+                $("amount").sum().as("amount"));
     }
 
     public static void main(String[] args) throws Exception {
+        // EnvironmentSettings по умолчанию создается в RuntimeExecutionMode.STREAMING режиме - есть опции в пакетоном или в стриминг режиме
         EnvironmentSettings settings = EnvironmentSettings.newInstance().build();
         TableEnvironment tEnv = TableEnvironment.create(settings);
 
@@ -64,6 +95,6 @@ public class SpendReport {
                 ")");
 
         Table transactions = tEnv.from("transactions");
-        report(transactions).executeInsert("spend_report");
+        reportByWindow(transactions).executeInsert("spend_report");
     }
 }
