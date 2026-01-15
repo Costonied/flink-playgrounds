@@ -16,23 +16,33 @@
 # limitations under the License.
 ################################################################################
 
+# Отличия от ванильного Docker Compose из оригинального репозитория:
+# - использование последней версии Apache Flink (на момент написания этих строк это 2.1.1) вместо старой версии 1.6.0 - да, не очень хорошо не фиксировать версию в примере использования, но захотелось сейчас сделать так
+# - использована confluentinc кафка вместо bitnami
+# - добавлены некоторые поясняющие комментарии
+
 services:
+
   jobmanager:
-    image: apache/flink-table-walkthrough:1-FLINK-1.16-scala_2.12
+    image: flink:latest
     build: .
     hostname: "jobmanager"
     expose:
       - "6123"
     ports:
       - "8082:8081"
+    # standalone-job - запуск в режиме одного задания (приложения)
+    # jobmanager - запуск в сессионном режиме, когда через REST или CLI можно добавлять разные задания (приложения)
     command: standalone-job
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
+      - FLINK_APPLICATION_JAR=/opt/flink/usrlib/spend-report.jar
     depends_on:
       - kafka
       - mysql
+
   taskmanager:
-    image: apache/flink-table-walkthrough:1-FLINK-1.16-scala_2.12
+    image: flink:latest
     build: .
     expose:
       - "6121"
@@ -44,15 +54,31 @@ services:
       - jobmanager:jobmanager
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
+
   kafka:
-    image: 'bitnami/kafka:3.9.0'
+    image: confluentinc/cp-kafka:7.9.1
+    container_name: kafka
     environment:
-      - KAFKA_CFG_NODE_ID=0
-      - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: 'Z4K7Z6T8Q8eZ2y3z4A5B6w'
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"       # Ограничение до 0.5 ядра CPU (50%)
+          memory: 512M      # Ограничение RAM до 512 МБ
+        reservations:
+          memory: 256M      # Зарезервировать минимум 256 МБ RAM
+
   data-generator:
       image: apache/data-generator:1
       build: ../docker/data-generator
